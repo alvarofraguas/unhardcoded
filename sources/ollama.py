@@ -4,9 +4,8 @@ Ollama source: discovers models from local Ollama instance or Ollama Cloud.
 Local:  GET http://localhost:11434/api/tags (no auth)
 Cloud: GET https://ollama.com/api/tags (requires auth)
 
-Authentication methods (in order of preference):
-1. Ed25519 OAuth - Uses ~/.ollama/id_ed25519 key (automatic, no config needed)
-2. API Key - Uses OLLAMA_API_KEY environment variable
+Authentication methods:
+1. API Key - Uses OLLAMA_API_KEY environment variable (Authorization: Bearer)
 """
 from __future__ import annotations
 
@@ -14,12 +13,6 @@ import os
 from typing import Any
 
 from sources import Balance, Price
-from sources.ollama_auth import (
-    get_ollama_auth_header,
-    has_ollama_key,
-    can_use_ed25519_auth,
-    OllamaAuthError,
-)
 
 
 BASE_URL_LOCAL = "http://localhost:11434"
@@ -42,37 +35,15 @@ class OllamaSource:
         self._api_key = env_get("OLLAMA_API_KEY")
         self._local_base = env_get("OLLAMA_BASE_URL") or BASE_URL_LOCAL
 
-        # Ed25519 auth support
-        self._use_ed25519 = can_use_ed25519_auth()
-
         # Cached offers from last refresh
         self._offers: list[dict] = []
         self._local_models: list[dict] = []
         self._cloud_models: list[dict] = []
 
     def _get_auth_headers(self, url: str) -> dict:
-        """
-        Get authentication headers for Ollama Cloud.
-
-        Priority:
-        1. Ed25519 OAuth (if key exists)
-        2. API Key (if OLLAMA_API_KEY set)
-        """
-        if self._use_ed25519:
-            try:
-                auth_token = get_ollama_auth_header(
-                    method="GET",
-                    url=url,
-                    body=b""
-                )
-                return {"Authorization": auth_token}
-            except OllamaAuthError:
-                # Fall back to API key
-                pass
-
+        """Get authentication headers for Ollama Cloud (API key Bearer)."""
         if self._api_key:
             return {"Authorization": f"Bearer {self._api_key}"}
-
         return {}
 
     async def _get(self, base_url: str, path: str, headers: dict | None = None) -> dict:
@@ -96,11 +67,9 @@ class OllamaSource:
     async def _fetch_cloud_models(self) -> list[dict]:
         """Fetch models from Ollama Cloud.
 
-        Uses Ed25519 OAuth if key exists, otherwise API key.
-        Requires either OLLAMA_API_KEY or ~/.ollama/id_ed25519.
+        Requires OLLAMA_API_KEY (sent as Authorization: Bearer).
         """
-        # Prefer Ed25519 auth when available (no config needed)
-        if not self._use_ed25519 and not self._api_key:
+        if not self._api_key:
             return []
 
         try:
@@ -138,8 +107,8 @@ class OllamaSource:
         # Always try local
         self._local_models = await self._fetch_local_models()
 
-        # Try cloud if configured or Ed25519 key available
-        if self._use_cloud and (self._use_ed25519 or self._api_key):
+        # Try cloud if configured and an API key is available
+        if self._use_cloud and self._api_key:
             self._cloud_models = await self._fetch_cloud_models()
 
         # Build offers (no duplicates, prefer local)

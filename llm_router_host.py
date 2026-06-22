@@ -25,17 +25,6 @@ import route_reliability as _route_reliability
 import route_latency as _route_latency
 import route_tool_capability as _route_tool_capability
 
-# Ollama Ed25519 OAuth support (optional - falls back gracefully)
-try:
-    from sources.ollama_auth import (
-        get_ollama_auth_header,
-        can_use_ed25519_auth,
-        OllamaAuthError,
-    )
-    HAS_OLLAMA_ED25519 = True
-except ImportError:
-    HAS_OLLAMA_ED25519 = False
-
 import lupa
 from lupa import LuaRuntime
 
@@ -587,33 +576,20 @@ def _resolve_ollama_cloud_auth(
     method: str = "POST",
     body: bytes = b"",
 ) -> dict | None:
-    """Resolve auth headers for Ollama Cloud.
-
-    Priority:
-    1. Ed25519 OAuth (if ~/.ollama/id_ed25519 exists) - automatic, no config needed
-    2. API Key (if OLLAMA_API_KEY set)
+    """Resolve auth headers for Ollama Cloud via OLLAMA_API_KEY.
 
     Args:
         env_get: Function to read environment variables
-        url: Full URL for the request (e.g., https://ollama.com/api/v1/chat/completions)
-        method: HTTP method (POST for chat completions, GET for discovery)
-        body: Request body for POST requests (used in signature)
+        url: Full URL for the request (unused; kept for call-site symmetry)
+        method: HTTP method (unused; kept for call-site symmetry)
+        body: Request body (unused; kept for call-site symmetry)
 
-    Returns auth headers dict, or None if no auth available.
+    Returns {"Authorization": "Bearer <key>"} if OLLAMA_API_KEY is set,
+    else None (caller maps None to an auth_error).
     """
-    # Try Ed25519 OAuth first (automatic, no config needed)
-    if HAS_OLLAMA_ED25519 and can_use_ed25519_auth():
-        try:
-            auth_token = get_ollama_auth_header(method=method, url=url, body=body)
-            return {"Authorization": auth_token}
-        except OllamaAuthError:
-            pass  # Fall through to API key
-
-    # Fall back to API key
     api_key = env_get("OLLAMA_API_KEY")
     if api_key:
         return {"Authorization": f"Bearer {api_key}"}
-
     return None
 
 
@@ -632,7 +608,6 @@ def _prepare_openai_call(
 
     offer = request.get("offer") or {}
 
-    # Build request body first (needed for Ed25519 signature in Ollama auth)
     body: dict = {
         # marketplace candidates may serve a curated family under a different
         # wire name (service aliasing) — the offer's wire id wins.
@@ -648,7 +623,7 @@ def _prepare_openai_call(
 
     # Ollama: override auth based on endpoint
     # Local endpoints (localhost, 127.0.0.1) require no auth
-    # Cloud endpoints (ollama.com) require auth (Ed25519 OAuth or API key)
+    # Cloud endpoints (ollama.com) require auth (OLLAMA_API_KEY Bearer)
     base_url = request.get("base_url") or ""
     provider_id = request.get("provider_id") or ""
     seller_endpoint = offer.get("seller_endpoint") or ""
@@ -666,16 +641,13 @@ def _prepare_openai_call(
     if is_ollama:
         endpoint = seller_endpoint or base_url
         if endpoint.startswith("https://ollama.com"):
-            # Cloud: try Ed25519 OAuth first, then API key
-            # Note: Ed25519 signature includes the request body for POST requests
-            import json
-            body_bytes = json.dumps(body).encode("utf-8")
+            # Cloud: API key Bearer (OLLAMA_API_KEY)
             auth_headers = _resolve_ollama_cloud_auth(
-                env_get, url, method="POST", body=body_bytes
+                env_get, url, method="POST", body=b""
             )
             if auth_headers is None:
                 return None, _err("auth_error", 0, 0,
-                    "Ollama Cloud requires OLLAMA_API_KEY or ~/.ollama/id_ed25519 key")
+                    "Ollama Cloud requires OLLAMA_API_KEY")
         else:
             # Local: no auth required
             auth_headers = {}
