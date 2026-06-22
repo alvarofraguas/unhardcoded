@@ -18,24 +18,32 @@ routed call, follow [`SETUP.md`](./SETUP.md) — or point a coding agent at it.
 
 ## Running the tests
 
+Install the deps once (a virtualenv keeps them off your system Python):
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+```
+
 **Unit tests** — boot a real host with mocked provider responses (only the
 outbound HTTP to upstream providers is mocked):
 
 ```bash
-nix-shell -p 'python3.withPackages(ps: with ps; [lupa httpx fastapi uvicorn pydantic pytest pytest-asyncio])' \
-    --run 'python -m pytest tests -q'
+python -m pytest tests -q
 ```
 
 **BDD user-flow suite** (`features/`, behave) — drives the running stack end to
 end the way the dashboard does and asserts the rendered data is correct,
-including a real headless-browser pass. End-to-end chats route to a $0 path so
-it's free and repeatable. Needs the stack up (see `SETUP.md`); the flow
-catalogue it covers is [`user_flows.json`](./user_flows.json).
+including a real headless-browser pass (needs Chrome/Chromium installed). End-to-end
+chats route to a $0 path so it's free and repeatable. Needs the stack up (see
+`SETUP.md`); the flow catalogue it covers is [`user_flows.json`](./user_flows.json).
 
 ```bash
-nix-shell -p chromium chromedriver "python3.withPackages(ps: with ps; [selenium behave requests])" \
-    --run 'behave'
+behave
 ```
+
+*(Nix users: `nix-shell -p ...` with the same packages — plus `chromium
+chromedriver` — works as before.)*
 
 Real-money AntSeed scenarios are excluded by default and gated behind
 `RUN_ANTSEED_SPEND=1`; the read-only `@antseed` data checks auto-skip when no

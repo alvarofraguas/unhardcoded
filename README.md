@@ -80,13 +80,15 @@ troubleshooting are in [`SETUP.md`](./SETUP.md).
 ### Develop without Docker (raw shim — no dashboard/auth)
 
 ```bash
-nix-shell -p 'python3.withPackages(ps: with ps; [lupa httpx fastapi uvicorn pydantic])' \
-    --run 'python serve.py --config config.live.lua --default-profile default --host 127.0.0.1 --port 8080'
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+python serve.py --config config.live.lua --default-profile default --host 127.0.0.1 --port 8080
 ```
 
 `serve.py` is the data plane only (no ingress auth, no dashboard); provider keys
 come from the process env. The bearer-token contract and the dashboard live in
-the `ingress` service (`docker compose`).
+the `ingress` service (`docker compose`). *(Nix users: a `nix-shell` with the
+same packages works too.)*
 
 ## Policies (the `model` field + `policy_ir`)
 
@@ -125,20 +127,29 @@ benchmarks/modalities/capabilities (`bench_intelligence`, `in_image`,
 
 ## Tests
 
-**Unit** (boots a real host with mocked provider responses — only the outbound
+Install the test deps once (a virtualenv keeps them off your system Python):
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+```
+
+**Unit** — boots a real host with mocked provider responses (only the outbound
 HTTP to upstream providers is mocked):
 
 ```bash
-nix-shell -p 'python3.withPackages(ps: with ps; [lupa httpx fastapi uvicorn pydantic pytest pytest-asyncio])' \
-    --run 'python -m pytest tests -q'
+python -m pytest tests -q
 ```
 
 **BDD user-flow suite** (`features/`, behave) — drives the live stack end to end
-the way the dashboard does, and asserts the rendered data is correct (incl. a
-real headless-browser pass). Free & repeatable: end-to-end chats route to a $0
-path. The full catalogue of flows it covers is [`user_flows.json`](./user_flows.json).
+the way the dashboard does and asserts the rendered data is correct, including a
+real headless-browser pass (needs Chrome/Chromium installed; Selenium fetches the
+matching driver). Free & repeatable: end-to-end chats route to a $0 path. The
+catalogue of flows it covers is [`user_flows.json`](./user_flows.json):
 
 ```bash
-nix-shell -p chromium chromedriver "python3.withPackages(ps: with ps; [selenium behave requests])" \
-    --run 'behave'
+behave
 ```
+
+*(Nix users: `nix-shell -p ...` with the same packages — plus `chromium
+chromedriver` for the browser pass — works as before.)*

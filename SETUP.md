@@ -160,20 +160,25 @@ funds — an immediate `withdraw` after `deposit` reverts.
 
 ## Run the test suites
 
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+```
+
 Host unit tests (mocked providers, no spend):
 
 ```bash
-nix-shell -p 'python3.withPackages(ps: with ps; [lupa httpx fastapi uvicorn pydantic pytest pytest-asyncio])' \
-    --run 'python -m pytest tests -q'
+python -m pytest tests -q
 ```
 
 End-to-end BDD user-flow suite (drives the live stack; chats route to a $0 path
-so it's free):
+so it's free; the browser pass needs Chrome/Chromium installed):
 
 ```bash
-nix-shell -p chromium chromedriver "python3.withPackages(ps: with ps; [selenium behave requests])" \
-    --run 'behave'
+behave
 ```
+
+*(Nix users: a `nix-shell` with the same packages works too.)*
 
 The full catalogue of user flows is in [`user_flows.json`](./user_flows.json);
 the `.feature` files under `features/` are lowered from it.
